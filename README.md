@@ -1,40 +1,64 @@
-# image installer for foreman discovery image
+# image installer extension for foreman discovery image
 
-# TODO
-fix readme.
+This is some helper scripts to use foreman discover image to write "cloud images" (ready OS images) disk on instances we want to deploy.
+It can be used both on virtual and bare metal nodes. It's main purpose was to mimic deployment used in cloud and virtual environments on bare metal.
 
-## stuff
+Why not deploy bare metal as you would virtual or cloud?
 
-pxe:
+Installation is a lot faster than Kickstart and Preseed, and a lot less complicated. Anyone that have been using Preseed and written complex partman recipes knows what I'm talking about.
 
-```
+## TODO
+Stuff we can do to improve this project.
+* improve README
+* add Udpcast support
+* add and test CentOS/RHEL/SuSE and more distros
+* make templates and scripts more dynamic
+
+## Setup
+To use this it's recommended to have [The Foreman](https://theforeman.org/).
+To setup foreman read foreman documentation and setup foreman discover(at lest the image).
+After that we bend the will of foreman discovery image to something it wasn't originally intended for.
+
+
+### foreman
+A working setup is in foreman exemplified here.
+
+1. Create a OS template.
+2. Create PXE, finish, provision templates and associate with OS.
+3. Go back to OS, select the templates.
+
+Examples below:
+#### PXELinux template
+Create a PXELinux or ipxe template and associate with OS
+
+```ruby
 <%#
 kind: PXELinux
-name: pxelinux_discovery_image
+name: discovery_image_pxelinux
 -%>
 <%# Used to boot discovery image and get it to install os image to disk. %>
 default discovery
 LABEL discovery
   MENU LABEL Foreman Discovery Image
   KERNEL <%= foreman_server_url %>/files/os/fdi-image/vmlinuz0
-  APPEND initrd=<%= foreman_server_url %>/files/os/fdi-image/initrd0.img rootflags=loop root=live:/fdi.iso rootfstype=auto ro rd.live.image acpi=force rd.luks=0 rd.md=0 rd.dm=0 rd.lvm=0 rd.bootif=0 rd.neednet=0 rd.debug=0 nomodeset fdi.ssh=1 fdi.rootpw=debug fdi.countdown=99999 proxy.url=<%= foreman_server_url %> proxy.type=foreman fdi.zips=os/fdi-image/image_installer.zip image.image=<%= foreman_server_url %>/files/os/ubuntu/<%= @host.operatingsystem.release_name %>-server-cloudimg-amd64.img image.cloudinit=<%= foreman_url("provision")%> image.partition=true image.finish=<%= foreman_url("finish") %>
+  APPEND initrd=<%= foreman_server_url %>/files/os/fdi-image/initrd0.img rootflags=loop root=live:/fdi.iso rootfstype=auto ro rd.live.image acpi=force rd.luks=0 rd.md=0 rd.dm=0 rd.lvm=0 rd.bootif=0 rd.neednet=0 rd.debug=0 nomodeset fdi.ssh=1 fdi.rootpw=debug fdi.countdown=99999 fdi.noregister=1 proxy.url=<%= foreman_server_url %> proxy.type=foreman fdi.zips=os/fdi-image/image_installer.zip image.image=<%= foreman_server_url %>/files/os/ubuntu/<%= @host.operatingsystem.release_name %>-server-cloudimg-amd64.img image.cloudinit=<%= foreman_url("provision")%> image.partition=true image.finish=<%= foreman_url("finish") %>
   IPAPPEND 2
 ```
 
-finish:
-```
+#### finish template
+Create a finish template and associate with OS
+
+```bash
+<%#
+kind: Finish
+name: discovery_image_finish
+-%>
 #!/bin/bash -x
 
 PATH="$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # excuse me, do you have the time?
 ntpdate 0.se.pool.ntp.org
-
-# blacklist modues we don't use or cause problems, can't remeber why i blacklisted these in the first place.
-echo "blacklist sb_edac" > /etc/modprobe.d/blacklist-sb_edac.conf
-echo "blacklist mei" >> /etc/modprobe.d/blacklist-sb_edac.conf
-echo "blacklist acpi_pad" >> /etc/modprobe.d/blacklist-sb_edac.conf
-echo "blacklist i7core_edac" >> /etc/modprobe.d/blacklist-sb_edac.conf
 
 # grub setup
 rm -f /etc/default/grub.d/50-cloudimg-settings.cfg
@@ -84,13 +108,19 @@ curl -o /etc/cloud/cloud.cfg.d/99_config.cfg <%= foreman_url("provision")%>
 # mkdir /root/.ssh
 # echo 'ssh-rsa [KEY GOES HERE] keyname@something' > /root/.ssh/authorized_keys
 # chmod 0600 /root/.ssh/authorized_keys
+# end debug stuff
 
 curl -k <%= foreman_url('built') %>
 ```
 
-cloud-init/provision:
+#### provision template
+Create a provision template with your cloud-init configuration and associate with OS.
 
-```
+```yaml
+<%#
+kind: Provision
+name: discovery_image_cloudinit
+-%>
 datasource:
   NoCloud:
     user-data: |
@@ -137,11 +167,36 @@ datasource:
       local-hostname: <%= @host.name %>
 ```
 
-### parted
-parted v3.2 is built with following
-edit parted/Makefile.am and find parted_LDFLAGS = $(PARTEDLDFLAGS)
-add ' -all-static' to the line.
-and patch http://www.linuxfromscratch.org/patches/blfs/7.6/parted-3.2-devmapper-1.patch
-(http://www.linuxfromscratch.org/blfs/view/7.6/postlfs/parted.html)
+### build OS images
+Building raw OS images can easily be done with OpenStack [diskimage builder](http://docs.openstack.org/developer/diskimage-builder/).
 
-./configure --disable-shared --disable-dynamic-loading --enable-static --enable-static=parted --enable-device-mapper=no
+With cron and a script like this you can automate your image building process.
+
+```bash
+#!/bin/bash
+
+cd $(dirname $0)
+
+# requirements:
+# apt-get install qemu-utils python-yaml curl
+
+curl -L -O https://github.com/openstack/dib-utils/archive/master.tar.gz
+tar xvf master.tar.gz
+curl -L -O https://github.com/openstack/diskimage-builder/archive/master.tar.gz
+tar xvf master.tar.gz
+
+PATH=$PATH:${PWD}/diskimage-builder-master/bin:${PWD}/dib-utils-master/bin
+
+DIB_CLOUD_INIT_DATASOURCES=NoCloud
+DIB_RELEASE=xenial disk-image-create -t raw ubuntu baremetal -o xenial-server-cloudimg-amd64
+DIB_RELEASE=trusty disk-image-create -t raw ubuntu baremetal -o trusty-server-cloudimg-amd64
+DIB_RELEASE=precise disk-image-create -t raw ubuntu baremetal -o precise-server-cloudimg-amd64
+```
+
+### contribute
+
+* create issues
+* create pull requests
+
+### license
+Apache License 2.0
