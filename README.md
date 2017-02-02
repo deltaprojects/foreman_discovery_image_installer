@@ -13,6 +13,7 @@ Stuff we can do to improve this project.
 * add Udpcast support
 * add and test CentOS/RHEL/SuSE and more distros
 * make templates/examples and scripts more dynamic
+* set image.partition=auto or custom when baremetal and image.partition=no when virtual.
 
 ## Setup
 To use this it's recommended to have [The Foreman](https://theforeman.org/).
