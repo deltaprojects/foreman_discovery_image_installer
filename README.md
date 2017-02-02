@@ -49,7 +49,7 @@ default discovery
 LABEL discovery
   MENU LABEL Foreman Discovery Image
   KERNEL <%= foreman_server_url %>/files/os/fdi-image/vmlinuz0
-  APPEND initrd=<%= foreman_server_url %>/files/os/fdi-image/initrd0.img rootflags=loop root=live:/fdi.iso rootfstype=auto ro rd.live.image acpi=force rd.luks=0 rd.md=0 rd.dm=0 rd.lvm=0 rd.bootif=0 rd.neednet=0 rd.debug=0 nomodeset fdi.ssh=1 fdi.rootpw=debug fdi.countdown=99999 fdi.noregister=0 proxy.url=<%= foreman_server_url %> proxy.type=foreman fdi.zips=os/fdi-image/image_installer.zip image.image=<%= foreman_server_url %>/files/os/ubuntu/<%= @host.operatingsystem.release_name %>-server-cloudimg-amd64.img image.cloudinit=<%= foreman_url("provision")%> image.partition=auto image.finish=<%= foreman_url("finish") %>
+  APPEND initrd=<%= foreman_server_url %>/files/os/fdi-image/initrd0.img rootflags=loop root=live:/fdi.iso rootfstype=auto ro rd.live.image acpi=force rd.luks=0 rd.md=0 rd.dm=0 rd.lvm=0 rd.bootif=0 rd.neednet=0 rd.debug=0 nomodeset fdi.ssh=1 fdi.rootpw=debug fdi.countdown=99999 fdi.noregister=0 biosdevname=1 proxy.url=<%= foreman_server_url %> proxy.type=foreman fdi.zips=os/fdi-image/image_installer.zip image.image=<%= foreman_server_url %>/files/os/ubuntu/<%= @host.operatingsystem.release_name %>-server-cloudimg-amd64.raw image.cloudinit=<%= foreman_url("provision")%> image.partition=auto image.finish=<%= foreman_url("finish") %>
   IPAPPEND 2
 ```
 
@@ -74,7 +74,7 @@ EOF
 apt-get update
 
 # install some needed packages
-DEBIAN_FRONTEND=noninteractive apt-get install -y grep grub-pc ntpdate biosdevname
+DEBIAN_FRONTEND=noninteractive apt-get install -y grep biosdevname grub-pc ntpdate
 
 # grub setup
 rm -f /etc/default/grub.d/50-cloudimg-settings.cfg
@@ -156,7 +156,7 @@ COUNT=`echo $BONDIFS | wc -w`
 
 if [ $COUNT -gt 1 ]; then
 for i in $BONDIFS ; do
-cat >> /etc/network/interfaces.d/bond0 <<EOF
+cat >> /etc/network/interfaces.d/bond0.cfg <<EOF
 auto ${i}
 iface ${i} inet manual
   bond-master bond0
@@ -223,10 +223,8 @@ datasource:
          sudo: ALL=(ALL) NOPASSWD:ALL
       apt_sources:
        - source: 'deb https://packages.chef.io/repos/apt/stable <%= @host.operatingsystem.release_name %> main'
-         key: |
-           -----BEGIN PGP PUBLIC KEY BLOCK-----
-           <SNIP...>
-           -----END PGP PUBLIC KEY BLOCK-----
+         keyid: '83EF826A'
+      package_update: true
       chef:
         force_install: false
         server_url: 'https://chef.hostname/organizations/evilcorp'
