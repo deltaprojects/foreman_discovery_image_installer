@@ -93,12 +93,13 @@ fi
 
 # apparently when using systemd, it detects swap partitions automagically and mounts them
 if [[ ! -f /target/bin/systemctl ]]; then
-  UUID=$(blkid -o export ${SWAP_PARTITION} | grep UUID)
-  [[ ${SWAP} == 'true' ]] && [[ ${KCL_IMAGE_PARTITION} == 'auto' ]] && echo "${UUID} none swap sw 0 0" >> /target/etc/fstab
+  [[ ${SWAP} == 'true' ]] && [[ ! ${KCL_IMAGE_PARTITION} == 'no' ]] && echo "LABEL=swap none swap sw 0 0" >> /target/etc/fstab
 fi
 
 # format swap partition
 [[ ${SWAP} == 'true' ]] && mkswap ${SWAP_PARTITION}
+# create a swap label
+[[ ${SWAP} == 'true' ]] && [[ ! ${KCL_IMAGE_PARTITION} == 'no' ]] && swaplabel -L swap ${SWAP_PARTITION}
 
 # setup resolv.conf as we need working networking within the chroot we are about to run
 rm /target/etc/resolv.conf
