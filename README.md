@@ -7,13 +7,14 @@ Why not deploy bare metal as you would virtual or cloud?
 
 Installation is a lot faster than Kickstart and Preseed, and a lot less complicated. Anyone that have been using Preseed and written complex partman recipes knows what I'm talking about.
 
+Currently Ubuntu Trusty and Xenial are tested and works with this tool.
+
 ## TODO
 Stuff we can do to improve this project.
 * improve README
 * add Udpcast support
 * add and test CentOS/RHEL/SuSE and more distros
 * make templates/examples and scripts more dynamic
-* set image.partition=auto or custom when baremetal and image.partition=no when virtual.
 
 ## Setup
 To use this it's recommended to have [The Foreman](https://theforeman.org/).
@@ -39,18 +40,48 @@ adjustable parameters
 * image.partition - currently this can be 'auto', 'no' or 'custom'.
   * if you set image.partition to custom you must add a image.partition.custom with a URL to custom partitioning script.
 
+Below is a example on how to build a more dynamic pxe config. In the example below there is a case that checks if it's a virtual kvm machine, or if partition table name is `_auto` or `_virtual`, if the partition table is not named accordingly it will set _image.partition_ to custom.
+
 ```ruby
 <%#
 kind: PXELinux
 name: discovery_image_pxelinux
 -%>
-<%# Used to boot discovery image and get it to install os image to disk. %>
+<%# Used to boot discovery image and get it to install os image to disk. -%>
+<%-
+case @host.facts['virtual']
+when 'kvm'
+  partition = 'no'
+else
+  case @host.ptable.name
+  when '_auto'
+    partition = 'auto'
+  when '_virtual'
+    partition = 'no'
+  else
+    partition = 'custom'
+  end
+end
+-%>
 default discovery
 LABEL discovery
   MENU LABEL Foreman Discovery Image
   KERNEL <%= foreman_server_url %>/files/os/fdi-image/vmlinuz0
-  APPEND initrd=<%= foreman_server_url %>/files/os/fdi-image/initrd0.img rootflags=loop root=live:/fdi.iso rootfstype=auto ro rd.live.image acpi=force rd.luks=0 rd.md=0 rd.dm=0 rd.lvm=0 rd.bootif=0 rd.neednet=0 rd.debug=0 nomodeset fdi.ssh=1 fdi.rootpw=debug fdi.countdown=99999 fdi.noregister=0 biosdevname=1 proxy.url=<%= foreman_server_url %> proxy.type=foreman fdi.zips=os/fdi-image/image_installer.zip image.image=<%= foreman_server_url %>/files/os/ubuntu/<%= @host.operatingsystem.release_name %>-server-cloudimg-amd64.raw image.cloudinit=<%= foreman_url("provision")%> image.partition=auto image.finish=<%= foreman_url("finish") %>
+  APPEND initrd=<%= foreman_server_url %>/files/os/fdi-image/initrd0.img rootflags=loop root=live:/fdi.iso rootfstype=auto ro rd.live.image acpi=force rd.luks=0 rd.md=0 rd.dm=0 rd.lvm=0 rd.bootif=0 rd.neednet=0 rd.debug=0 nomodeset fdi.ssh=1 fdi.rootpw=debug fdi.countdown=99999 fdi.noregister=1 biosdevname=1 proxy.url=<%= foreman_server_url %> proxy.type=foreman fdi.zips=os/fdi-image/image_installer.zip image.image=<%= foreman_server_url %>/files/os/ubuntu/<%= @host.operatingsystem.release_name %>-server-cloudimg-amd64.raw image.cloudinit=<%= foreman_url("provision")%> image.finish=<%= foreman_url("finish") %> image.partition=<%= partition %> image.partition.custom=<%= foreman_url('script') %>
   IPAPPEND 2
+```
+
+#### partition templates
+You can look at some example templates in the contrib folder.
+Copy and paste those into foreman partition tables.
+But in order to render those as a downloadable file you need to setup a script template with the following content.
+
+```ruby
+<%#
+kind: Script template
+name: discovery_image_partition
+-%>
+<%= @host.diskLayout %>
 ```
 
 #### finish template
@@ -155,6 +186,7 @@ BONDIFS=`ip -o -0 link| egrep -v "LOOPBACK|NO-CARRIER" | awk -F': ' '{print $2}'
 COUNT=`echo $BONDIFS | wc -w`
 
 if [ $COUNT -gt 1 ]; then
+DEBIAN_FRONTEND=noninteractive apt-get install -y ifenslave
 for i in $BONDIFS ; do
 cat >> /etc/network/interfaces.d/bond0.cfg <<EOF
 auto ${i}
@@ -255,15 +287,20 @@ With cron and a script like this you can automate your image building process.
 ```bash
 #!/bin/bash
 
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 cd $(dirname $0)
 
-# requirements:
 # apt-get install qemu-utils python-yaml curl
+# git clone https://github.com/openstack/diskimage-builder.git
+# git clone https://git.openstack.org/openstack/dib-utils
 
-curl -L -O https://github.com/openstack/dib-utils/archive/master.tar.gz
-tar xvf master.tar.gz
-curl -L -O https://github.com/openstack/diskimage-builder/archive/master.tar.gz
-tar xvf master.tar.gz
+#rm -rf dib-utils-master/
+#rm -rf diskimage-builder-master/
+
+# curl -L -O https://github.com/openstack/dib-utils/archive/master.tar.gz
+# tar xvf master.tar.gz
+# curl -L -O https://github.com/openstack/diskimage-builder/archive/master.tar.gz
+# tar xvf master.tar.gz
 
 PATH=$PATH:${PWD}/diskimage-builder-master/bin:${PWD}/dib-utils-master/bin
 
