@@ -39,6 +39,7 @@ elif [[ ${DEVCOUNT} -gt 4 ]]; then
 fi
 
 # setting this variable will allow is to run mdadm in image.sh after rootfs is mounted
+# shellcheck disable=SC2034
 CUSTOM_LATE_CMD="mdadm --detail --scan | tee -a /target/etc/mdadm/mdadm.conf && cp /tmp/dmraid2mdadm.cfg /target/etc/default/grub.d/dmraid2mdadm.cfg"
 
 cat << EOF > /tmp/dmraid2mdadm.cfg
@@ -76,6 +77,7 @@ if [[ ${SWAP} == 'true' ]]; then
   ${parted} name 2 cloudimg-rootfs
   ${parted} set 2 boot on
   # set swap partition
+  # shellcheck disable=SC2034
   SWAP_PARTITION=/dev/${DISK}p1
   # set rootfs partition to third partition
   PARTITION=${DISK}p2
@@ -84,5 +86,6 @@ else
   ${parted} name 1 cloudimg-rootfs
   ${parted} set 1 boot on
   # set partition to second partition
+  # shellcheck disable=SC2034
   PARTITION=${DISK}p1
 fi
