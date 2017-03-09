@@ -2,7 +2,9 @@
 # This is an example of how one could setup raid for instance.
 #
 # Be aware that the foreman discovery image with mdadm haven't been released yet.
-# NOTE that i haven't tested this partition script yet because of that.
+# temporary install rpm's until next version of discovery image.
+rpm -ivh http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/libreport-filesystem-2.1.11-35.el7.centos.x86_64.rpm
+rpm -ivh --nodeps http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/mdadm-3.4-14.el7.x86_64.rpm
 
 # find all disks.
 DEVICES=$(lsblk -d -b -n -r -o TYPE,NAME | egrep ^disk | awk '{print "/dev/"$2}')
@@ -12,18 +14,44 @@ DEVCOUNT=$(echo ${DEVICES} | wc -w)
 
 # wipe devices
 for i in ${DEVICES}; do
-  dd if=/dev/zero of=${i} bs=512 count=2
+  dd if=/dev/zero of=${i} bs=512 count=98303
+done
+
+# create partition table for mdraid
+RAIDDEVICES=""
+for dev in ${DEVICES}; do
+  parted="parted-3.2-static -a optimal -s -- ${dev}"
+  ${parted} mklabel gpt
+  ${parted} mkpart primary 0% 32MiB
+  ${parted} name 1 grub
+  ${parted} set 1 bios_grub on
+  ${parted} mkpart primary 32MiB -1
+  ${parted} name 2 raid
+  #${parted} set 2 raid on
+  export RAIDDEVICES="${dev}2 ${RAIDDEVICES}"
 done
 
 # Create the array
 if [[ ${DEVCOUNT} -eq 2 ]]; then
-  mdadm --create /dev/md0 --run --level=1 --raid-devices=${DEVCOUNT} ${DEVICES}
+  mdadm --create /dev/md0 --run --level=1 --raid-devices=${DEVCOUNT} ${RAIDDEVICES}
 elif [[ ${DEVCOUNT} -gt 4 ]]; then
-  mdadm --create /dev/md0 --run --level=10 --raid-devices=${DEVCOUNT} ${DEVICES}
+  mdadm --create /dev/md0 --run --level=10 --raid-devices=${DEVCOUNT} ${RAIDDEVICES}
 fi
 
 # setting this variable will allow is to run mdadm in image.sh after rootfs is mounted
-CUSTOM_LATE_CMD='mdadm --detail --scan | tee -a /target/etc/mdadm/mdadm.conf'
+CUSTOM_LATE_CMD="mdadm --detail --scan | tee -a /target/etc/mdadm/mdadm.conf && cp /tmp/dmraid2mdadm.cfg /target/etc/default/grub.d/dmraid2mdadm.cfg"
+
+cat << EOF > /tmp/dmraid2mdadm.cfg
+DMRAID2MDADM_TOAPPEND="nomdmonddf nomdmonisw"
+
+case "\$GRUB_CMDLINE_LINUX_DEFAULT" in
+    *\$DMRAID2MDADM_TOAPPEND*)
+        ;;
+    *)
+        GRUB_CMDLINE_LINUX_DEFAULT="\$GRUB_CMDLINE_LINUX_DEFAULT \$DMRAID2MDADM_TOAPPEND"
+        ;;
+esac
+EOF
 
 # set DISK variable
 DISK=md0
@@ -41,23 +69,20 @@ DISK_SIZE=$(lsblk -d -b -n -r -o SIZE /dev/${DISK})
 parted="parted-3.2-static -a optimal -s -- /dev/${DISK}"
 fstype=ext4
 ${parted} mklabel gpt
-${parted} mkpart primary 0% 32MiB
-${parted} name 1 grub
-${parted} set 1 bios_grub on
 if [[ ${SWAP} == 'true' ]]; then
-  ${parted} mkpart primary linux-swap 32MiB ${SWAPSIZE}GiB
-  ${parted} name 2 swap
+  ${parted} mkpart primary linux-swap 0% ${SWAPSIZE}GiB
+  ${parted} name 1 swap
   ${parted} mkpart primary ${fstype} ${SWAPSIZE}GiB -1
-  ${parted} name 3 cloudimg-rootfs
-  ${parted} set 3 boot on
-  # set swap partition
-  SWAP_PARTITION=/dev/${DISK}p2
-  # set rootfs partition to third partition
-  PARTITION=${DISK}p3
-else
-  ${parted} mkpart primary ${fstype} 32MiB -1
   ${parted} name 2 cloudimg-rootfs
   ${parted} set 2 boot on
-  # set partition to second partition
+  # set swap partition
+  SWAP_PARTITION=/dev/${DISK}p1
+  # set rootfs partition to third partition
   PARTITION=${DISK}p2
+else
+  ${parted} mkpart primary ${fstype} 0% -1
+  ${parted} name 1 cloudimg-rootfs
+  ${parted} set 1 boot on
+  # set partition to second partition
+  PARTITION=${DISK}p1
 fi
