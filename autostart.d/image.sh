@@ -1,9 +1,9 @@
 #!/bin/bash -xe
 
-# stop some of the discovery image services so the node doesn't get re-registered in foreman
-systemctl stop discovery-register.service &
+# kill some of the discovery image services so the node doesn't get re-registered in foreman
+systemctl kill discovery-register.service &
 systemctl disable discovery-register.service &
-systemctl stop discovery-menu.service &
+systemctl kill discovery-menu.service &
 systemctl disable discovery-menu.service &
 
 # fetch /proc/cmdline
@@ -14,6 +14,8 @@ exportKCL
 if ! [[ ${KCL_IMAGE_PARTITION} == 'custom' ]]; then
   # find out which is the smallest disk and that is what we will use as OS disk
   DISK=$(lsblk -d -b -n -r -o TYPE,NAME,SIZE | egrep ^disk | sort -k3n | awk NR==1'{print $2}')
+
+  DEVICES=/dev/${DISK}
 
   # wipe disk
   dd if=/dev/zero of=/dev/${DISK} bs=512 count=2
@@ -62,15 +64,22 @@ fi
 if [[ ${KCL_IMAGE_PARTITION} == 'custom' ]]; then
   # download custom partition setup script
   # this script can be used to create a raid, lvm, zfs or something
-  # remember that the script needs to set variables DISK and PARTITION
-  # DISK should contain device name relative to /dev/ (ex. DISK=md0 or DISK=mapper/vg00-root)
+  # remember that the script needs to set variables DEVICES and PARTITION
+  # DEVICES should contain absolute path devices that need grub installed (ex. DEVICES=/dev/sda\n/dev/sdb or DEVICES=mapper/vg00-root)
   # PARTITION should contain device or partition that will be used as OS device relative to /dev/ (ex. PARTITION=md0p3 or PARTITION=mapper/vg00-root).
+  # Optionally set SWAP_PARTITION and SWAP=true if you want to use a swap partition (ex. SWAP_PARTITION=/dev/md0p2).
   curl -o /tmp/partition.sh ${KCL_IMAGE_PARTITION_CUSTOM}
   source /tmp/partition.sh
 fi
 
 # write OS image
 curl ${KCL_IMAGE_IMAGE} | dd bs=2M of=/dev/${PARTITION}
+
+# make sure filesystem matches partition size.
+# temporary install rpm's until next version of discovery image.
+rpm -ivh --nodeps http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/e2fsprogs-libs-1.42.9-9.el7.x86_64.rpm
+rpm -ivh --nodeps http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/e2fsprogs-1.42.9-9.el7.x86_64.rpm
+resize2fs /dev/${PARTITION}
 
 # mount OS partition
 mkdir /target
@@ -107,10 +116,10 @@ cp /etc/resolv.conf /target/etc/resolv.conf
 
 # prepare for grub
 # finish script will use this file to install grub on correct disk
-echo /dev/${DISK} > /target/tmp/disklist
+echo -e "${DEVICES}" > /target/tmp/disklist
 
 # if custom partition script, we can run a command when rootfs is mounted to /target
-${CUSTOM_LATE_CMD}
+eval  ${CUSTOM_LATE_CMD}
 
 # download and execute foreman finish script
 curl -o /target/tmp/finish.sh ${KCL_IMAGE_FINISH}
