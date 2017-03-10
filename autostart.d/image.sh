@@ -72,8 +72,23 @@ if [[ ${KCL_IMAGE_PARTITION} == 'custom' ]]; then
   source /tmp/partition.sh
 fi
 
-# write OS image
-curl ${KCL_IMAGE_IMAGE} | dd bs=2M of=/dev/${PARTITION}
+if [ -n "${KCL_IMAGE_COMPRESSED}" ]; then
+  case ${KCL_IMAGE_IMAGE##*.} in
+    gz ) METHOD='gzip' ;;
+    xz ) METHOD='xz' ;;
+    bz2 ) METHOD='bzip2' ;;
+
+    * )
+      echo "Unknown compression method $0"
+      exit 1
+      ;;
+  esac
+
+  curl ${KCL_IMAGE_IMAGE} | ${METHOD} -d - | dd bs=2M of=/dev/${PARTITION}
+else
+  # write OS image
+  curl ${KCL_IMAGE_IMAGE} | dd bs=2M of=/dev/${PARTITION}
+fi
 
 # make sure filesystem matches partition size.
 # temporary install rpm's until next version of discovery image.
