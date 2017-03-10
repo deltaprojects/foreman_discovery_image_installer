@@ -79,6 +79,7 @@ curl ${KCL_IMAGE_IMAGE} | dd bs=2M of=/dev/${PARTITION}
 # temporary install rpm's until next version of discovery image.
 rpm -ivh --nodeps http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/e2fsprogs-libs-1.42.9-9.el7.x86_64.rpm
 rpm -ivh --nodeps http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/e2fsprogs-1.42.9-9.el7.x86_64.rpm
+e2fsck -f /dev/${PARTITION}
 resize2fs /dev/${PARTITION}
 
 # mount OS partition
