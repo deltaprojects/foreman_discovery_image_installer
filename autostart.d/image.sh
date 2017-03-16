@@ -72,8 +72,19 @@ if [[ ${KCL_IMAGE_PARTITION} == 'custom' ]]; then
   source /tmp/partition.sh
 fi
 
+FETCH="curl ${KCL_IMAGE_IMAGE}"
+WRITE="dd bs=2M of=/dev/${PARTITION}"
+case ${KCL_IMAGE_IMAGE##*.} in
+  gz ) WRITE="gzip -d - | ${WRITE}" ;;
+  xz ) WRITE="xz -d - | ${WRITE}" ;;
+  bz2 ) WRITE="bzip2 -d - | ${WRITE}"
+    # temporary install rpm's until next version of discovery image.
+    rpm -ivh --nodeps http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/bzip2-1.0.6-13.el7.x86_64.rpm
+  ;;
+esac
+
 # write OS image
-curl ${KCL_IMAGE_IMAGE} | dd bs=2M of=/dev/${PARTITION}
+eval "${FETCH} | ${WRITE}"
 
 # make sure filesystem matches partition size.
 # temporary install rpm's until next version of discovery image.
