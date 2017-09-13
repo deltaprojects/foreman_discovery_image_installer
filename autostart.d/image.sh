@@ -36,7 +36,7 @@ fi
 # if image.partition=auto
 if [[ ${KCL_IMAGE_PARTITION} == 'auto' ]]; then
   # partition disk if boot parameters partition=true
-  parted="parted-3.2-static -a optimal -s -- /dev/${DISK}"
+  parted="parted -a optimal -s -- /dev/${DISK}"
   fstype=ext4
   ${parted} mklabel gpt
   ${parted} mkpart primary 0% 32MiB
@@ -78,8 +78,6 @@ case ${KCL_IMAGE_IMAGE##*.} in
   gz ) WRITE="gzip -d - | ${WRITE}" ;;
   xz ) WRITE="xz -d - | ${WRITE}" ;;
   bz2 ) WRITE="bzip2 -d - | ${WRITE}"
-    # temporary install rpm's until next version of discovery image.
-    rpm -ivh --nodeps http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/bzip2-1.0.6-13.el7.x86_64.rpm
   ;;
 esac
 
@@ -89,10 +87,7 @@ eval "${FETCH} | ${WRITE}"
 # run extra actions per filesystem type
 case $(blkid | grep /dev/${PARTITION} | sed -e 's/.*TYPE="\(\S*\)".*/\1/') in
   ext*)
-    # make sure filesystem matches partition size.
-    # temporary install rpm's until next version of discovery image.
-    rpm -ivh --nodeps http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/e2fsprogs-libs-1.42.9-9.el7.x86_64.rpm
-    rpm -ivh --nodeps http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/e2fsprogs-1.42.9-9.el7.x86_64.rpm
+  # make sure filesystem matches partition size.
     e2fsck -p -f /dev/${PARTITION}
     resize2fs /dev/${PARTITION}
     ;;

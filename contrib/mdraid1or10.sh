@@ -1,10 +1,6 @@
 #!/bin/echo not_sourced
 # This is an example of how one could setup raid for instance.
 #
-# Be aware that the foreman discovery image with mdadm haven't been released yet.
-# temporary install rpm's until next version of discovery image.
-rpm -ivh http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/libreport-filesystem-2.1.11-35.el7.centos.x86_64.rpm
-rpm -ivh --nodeps http://mirror.nsc.liu.se/CentOS/7.3.1611/os/x86_64/Packages/mdadm-3.4-14.el7.x86_64.rpm
 
 # find all disks.
 DEVICES=$(lsblk -d -b -n -r -o TYPE,NAME | egrep ^disk | awk '{print "/dev/"$2}')
@@ -20,7 +16,7 @@ done
 # create partition table for mdraid
 RAIDDEVICES=""
 for dev in ${DEVICES}; do
-  parted="parted-3.2-static -a optimal -s -- ${dev}"
+  parted="parted -a optimal -s -- ${dev}"
   ${parted} mklabel gpt
   ${parted} mkpart primary 0% 32MiB
   ${parted} name 1 grub
@@ -67,7 +63,7 @@ DISK_SIZE=$(lsblk -d -b -n -r -o SIZE /dev/${DISK})
 [[ ${DISK_SIZE} -gt 64424509439 ]] && SWAPSIZE=8 # if > 60GB disk, swap 8GB
 
 # partition disk if boot parameters partition=true
-parted="parted-3.2-static -a optimal -s -- /dev/${DISK}"
+parted="parted -a optimal -s -- /dev/${DISK}"
 fstype=ext4
 ${parted} mklabel gpt
 if [[ ${SWAP} == 'true' ]]; then

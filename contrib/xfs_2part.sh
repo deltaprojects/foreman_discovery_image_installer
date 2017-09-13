@@ -26,7 +26,7 @@ SWAP=true
 ROOT_SIZE=$(awk -vroot=${ROOT_SIZE} -vswap=${SWAPSIZE} 'BEGIN{printf int(root+swap)}')
 
 # partition disk
-parted="parted-3.2-static -a optimal -s -- /dev/${DISK}"
+parted="parted -a optimal -s -- /dev/${DISK}"
 ${parted} mklabel gpt
 ${parted} mkpart primary 0% 32MiB
 ${parted} name 1 grub
