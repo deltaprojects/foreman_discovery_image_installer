@@ -7,10 +7,21 @@ DEVICES=$(lsblk -d -b -n -r -o TYPE,NAME | egrep ^disk | awk '{print "/dev/"$2}'
 DEVCOUNT=$(echo ${DEVICES} | wc -w)
 [[ ! ${DEVCOUNT} -gt 1 ]] && exit 1 # we need more than two disks for raid1 or raid10
 [[ ! $((DEVCOUNT%2)) -eq 0 ]] && exit 1 # exit if we don't have an even disk count
+MDCOUNT=$(mdadm --detail --scan | wc -l)
+
+# Remove any previous md raid.
+if [[ ${MDCOUNT} -gt 0 ]]; then
+  for array in $(mdadm --detail --scan | awk '{print $2}'); do
+    mdadm --stop ${array}
+    sleep 1
+    [[ -e ${array} ]] && mdadm --remove ${array}
+  done
+fi
 
 # wipe devices
-for i in ${DEVICES}; do
-  dd if=/dev/zero of=${i} bs=512 count=98303
+for dev in ${DEVICES}; do
+  [[ -e ${dev}2 ]] && mdadm --zero-superblock ${dev}2
+  dd if=/dev/zero of=${dev} bs=512 count=98303
 done
 
 # create partition table for mdraid
@@ -25,7 +36,11 @@ for dev in ${DEVICES}; do
   ${parted} name 2 raid
   #${parted} set 2 raid on
   export RAIDDEVICES="${dev}2 ${RAIDDEVICES}"
+  blockdev --flushbufs $dev
 done
+
+# give time to settle
+sync && sleep 1
 
 # Create the array
 if [[ ${DEVCOUNT} -eq 2 ]]; then
@@ -85,3 +100,9 @@ else
   # shellcheck disable=SC2034
   PARTITION=${DISK}p1
 fi
+
+# flush device buffers
+blockdev --flushbufs /dev/${DISK}
+for i in ${DEVICES}; do
+  blockdev --flushbufs ${i}
+done
