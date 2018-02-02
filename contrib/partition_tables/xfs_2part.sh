@@ -28,18 +28,59 @@ ROOT_SIZE=$(awk -vroot=${ROOT_SIZE} -vswap=${SWAPSIZE} 'BEGIN{printf int(root+sw
 # partition disk
 parted="parted -a optimal -s -- /dev/${DISK}"
 ${parted} mklabel gpt
-${parted} mkpart primary 0% 32MiB
+
+# temporary partition used to calculate optimal align size
+${parted} mkpart primary 0% 1%
+# optimal align byte size
+byte=$(${parted} unit B print | grep " 1 " |awk '{print $2}')
+byte=${byte::-1}
+# optimal align sector size
+sector=$(${parted} unit S print | grep " 1 " |awk '{print $2}')
+sector=${sector::-1}
+${parted} rm 1
+
+# give grub mbr partition a optimal align size partition.
+end=$((${sector}+${sector}))
+${parted} mkpart primary ${sector}S ${end}S
 ${parted} name 1 grub
 ${parted} set 1 bios_grub on
-${parted} mkpart primary linux-swap 32MiB ${SWAPSIZE}GiB
+
+# this is used to align next partition
+start=$(${parted} unit S print | grep " 1 " |awk '{print $3}')
+start=${start::-1}
+start=$((${start}+${sector}))
+
+# time to align swap partition
+end=$((${SWAPSIZE}*1024*1024*1024))
+round=$((${end}/${byte}))
+end=$((${byte}*${round}))
+${parted} mkpart primary linux-swap ${start}S ${end}B
 ${parted} name 2 swap
+
+# time to align third partition
+# this is used to align next partition
+start=$(${parted} unit S print | grep " 2 " |awk '{print $3}')
+start=${start::-1}
+start=$((${start}+${sector}))
+
 # rootfs ext4
-${parted} mkpart primary ext4 ${SWAPSIZE}GiB ${ROOT_SIZE}GiB
+# time to align rootfs partition
+end=$((${ROOT_SIZE}*1024*1024*1024))
+round=$((${end}/${byte}))
+end=$((${byte}*${round}))
+${parted} mkpart primary ext4 ${start}S ${end}B
 ${parted} name 3 cloudimg-rootfs
 ${parted} set 3 boot on
+
+# this is used to align next partition
+start=$(${parted} unit S print | grep " 3 " |awk '{print $3}')
+start=${start::-1}
+start=$((${start}+${sector}))
+
 # datafs xfs
-${parted} mkpart primary xfs ${ROOT_SIZE}GiB -1
+${parted} mkpart primary xfs ${start}S -1
 ${parted} name 4 data
+mkfs.xfs -f /dev/${DISK}4 -L data
 
 # set swap partition
 # shellcheck disable=SC2034
@@ -48,4 +89,5 @@ ${parted} name 4 data
 # shellcheck disable=SC2034
 PARTITION=${DISK}3
 
-#CUSTOM_LATE_CMD="chroot /target /sbin/mkfs.xfs -f /dev/${DISK}4 && mkdir /target/var/data && echo 'LABEL=data /var/data xfs noatime 0 2' | tee -a /target/etc/fstab"
+# shellcheck disable=SC2034
+CUSTOM_LATE_CMD="mkdir /target/var/data && echo 'LABEL=data /var/data xfs noatime 0 2' | tee -a /target/etc/fstab"
