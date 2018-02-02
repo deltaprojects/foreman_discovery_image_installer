@@ -39,21 +39,50 @@ if [[ ${KCL_IMAGE_PARTITION} == 'auto' ]]; then
   parted="parted -a optimal -s -- /dev/${DISK}"
   fstype=ext4
   ${parted} mklabel gpt
-  ${parted} mkpart primary 0% 32MiB
+
+  # temporary partition used to calculate optimal align size
+  ${parted} mkpart primary 0% 1%
+  # optimal byte sizes
+  byte=$(${parted} unit B print | grep " 1 " |awk '{print $2}')
+  byte=${byte::-1}
+  sector=$(${parted} unit S print | grep " 1 " |awk '{print $2}')
+  sector=${sector::-1}
+  ${parted} rm 1
+
+  # give grub mbr partition a optimal align size partition.
+  end=$((${sector}+${sector}))
+  ${parted} mkpart primary ${sector}S ${end}S
   ${parted} name 1 grub
   ${parted} set 1 bios_grub on
+
+  # this is used to align next partition
+  start=$(${parted} unit S print | grep " 1 " |awk '{print $3}')
+  start=${start::-1}
+  start=$((${start}+${sector}))
+
   if [[ ${SWAP} == 'true' ]]; then
-    ${parted} mkpart primary linux-swap 32MiB ${SWAPSIZE}GiB
+    # time to align second partition
+    end=$((${SWAPSIZE}*1024*1024*1024))
+    round=$((${end}/${byte}))
+    end=$((${byte}*${round}))
+    ${parted} mkpart primary linux-swap ${start}S ${end}B
     ${parted} name 2 swap
-    ${parted} mkpart primary ${fstype} ${SWAPSIZE}GiB -1
+
+    # time to align third partition
+    # this is used to align next partition
+    start=$(${parted} unit S print | grep " 2 " |awk '{print $3}')
+    start=${start::-1}
+    start=$((${start}+${sector}))
+    ${parted} mkpart primary ${fstype} ${start}S -1
     ${parted} name 3 cloudimg-rootfs
     ${parted} set 3 boot on
     # set swap partition
     SWAP_PARTITION=/dev/${DISK}2
     # set rootfs partition to third partition
     PARTITION=${DISK}3
+
   else
-    ${parted} mkpart primary ${fstype} 32MiB -1
+    ${parted} mkpart primary ${fstype} ${start}S -1
     ${parted} name 2 cloudimg-rootfs
     ${parted} set 2 boot on
     # set rootfs partition to second partition
